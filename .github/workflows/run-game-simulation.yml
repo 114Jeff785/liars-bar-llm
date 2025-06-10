@@ -1,0 +1,59 @@
+name: Run Game Simulation
+
+on:
+  workflow_dispatch:  # 允许手动触发工作流
+  schedule:
+    - cron: '0 0 * * *'  # 每天UTC时间0点运行（可根据需要调整）
+
+jobs:
+  run-simulation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install openai; fi
+        
+    - name: Run game simulation
+      env:
+        API_KEY: ${{ secrets.LLM_API_KEY }}
+        API_BASE_URL: ${{ secrets.LLM_API_BASE_URL }}
+      run: |
+        # 创建一个临时脚本来替换API密钥
+        cat > update_api_keys.py << 'EOF'
+        import re
+        import os
+        
+        # 读取llm_client.py文件
+        with open('llm_client.py', 'r') as f:
+            content = f.read()
+        
+        # 替换API密钥和基础URL
+        content = re.sub(r'API_BASE_URL = ".*"', f'API_BASE_URL = "{os.environ.get("API_BASE_URL")}"', content)
+        content = re.sub(r'API_KEY = ".*"', f'API_KEY = "{os.environ.get("API_KEY")}"', content)
+        
+        # 写回文件
+        with open('llm_client.py', 'w') as f:
+            f.write(content)
+        EOF
+        
+        # 执行脚本更新API密钥
+        python update_api_keys.py
+        
+        # 运行游戏模拟
+        python multi_game_runner.py --num-games 5
+        
+    - name: Upload game records
+      uses: actions/upload-artifact@v3
+      with:
+        name: game-records
+        path: demo_records/
